@@ -78,6 +78,7 @@ class FormTemplateSerializer(serializers.Serializer):
 
 class StaffSerializer(serializers.Serializer):
     id = serializers.CharField(read_only=True)
+    # _id=serializers.SerializerMethodField()
     staffid = serializers.CharField()
     name = serializers.CharField()
     email = serializers.EmailField()
@@ -99,3 +100,29 @@ class StaffSerializer(serializers.Serializer):
             instance.signature_imageurl = instance.signature_imageurl or ""
         instance.save()
         return instance
+class FormRequestSerializer(serializers.Serializer):
+    studentid = serializers.CharField()
+    templateId = serializers.CharField()
+    data = serializers.DictField()
+    staff_ids = serializers.ListField(child=serializers.CharField())
+
+    def create(self, validated_data):
+        student_id = validated_data['studentid']
+        template_id = validated_data['templateId']
+        form_data = validated_data['data']
+        staff_ids = validated_data['staff_ids']
+
+        # Build embedded staff approvals
+        staff_approvals = [
+            StaffApproval(staff_id=sid, status="pending") for sid in staff_ids
+        ]
+
+        form_request = FormRequest(
+            student_id=student_id,
+            template_id=template_id,
+            form_data=form_data,
+            staff_approvals=staff_approvals
+        )
+        form_request.save()
+        return form_request
+    

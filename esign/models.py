@@ -55,7 +55,28 @@ class Staff(Document):
     password = StringField(max_length=128, required=True)
     designation = StringField(max_length=100)
     department = StringField(max_length=100)
-    signature_imageurl = StringField(default="")  # always present, defaults to empty string
+    signature_imageurl = StringField(default="")  
 
     def __str__(self):
         return self.staffid
+
+
+# models.py
+
+# models.py
+from mongoengine import Document, EmbeddedDocument, fields
+import datetime
+
+class StaffApproval(EmbeddedDocument):
+    staff_id = fields.ObjectIdField(required=True)
+    status = fields.StringField(default="pending")  # pending/approved/rejected
+    remarks = fields.StringField(default="")
+    approved_at = fields.DateTimeField()
+
+class FormRequest(Document):
+    student_id = fields.ObjectIdField(required=True)
+    template_id = fields.ObjectIdField(required=True)
+    form_data = fields.DictField()
+    status = fields.StringField(default="pending")  # overall status
+    staff_approvals = fields.EmbeddedDocumentListField(StaffApproval)
+    created_at = fields.DateTimeField(default=datetime.datetime.utcnow)

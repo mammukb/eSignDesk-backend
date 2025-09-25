@@ -90,6 +90,17 @@ connect(
     db="eSignDesk",
     host="mongodb://localhost:27017"  # your MongoDB URI
 )
+# settings.py
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+# settings.py
+import os
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
 
 
 # Password validation
@@ -129,7 +140,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+# CORS_ALLOW_ALL_ORIGINS = True  # Only for development
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
