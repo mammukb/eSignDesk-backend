@@ -105,49 +105,7 @@ class StudentDetail(APIView):
         student.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
     
-# class DepartmentListCreate(APIView):
-#     def get(self, request):
-#         departments = Department.objects()
-#         serializer = DepartmentSerializer(departments, many=True)
-#         return Response(serializer.data)
 
-#     def post(self, request):
-#         serializer = DepartmentSerializer(data=request.data)
-#         if serializer.is_valid():
-#             department = serializer.save()
-#             return Response(DepartmentSerializer(department).data, status=status.HTTP_201_CREATED)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-# class DepartmentDetail(APIView):
-#     def get_object(self, code):
-#         try:
-#             return Department.objects.get(code=code)
-#         except Department.DoesNotExist:
-#             return None
-
-#     def get(self, request, code):
-#         department = self.get_object(code)
-#         if not department:
-#             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-#         serializer = DepartmentSerializer(department)
-#         return Response(serializer.data)
-    
-#     def put(self, request, code):
-#         department = self.get_object(code)
-#         if not department:
-#             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-#         serializer = DepartmentSerializer(department, data=request.data)
-#         if serializer.is_valid():
-#             serializer.save()
-#             return Response(serializer.data)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-#     def delete(self, request, code):
-#         department = self.get_object(code)
-#         if not department:
-#             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
-#         department.delete()
-#         return Response(status=status.HTTP_204_NO_CONTENT)
     
 # --- Form Templates ---
 class FormTemplateListCreate(APIView):
@@ -208,9 +166,11 @@ class StaffListCreate(APIView):
             return Response(StaffSerializer(staff).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 class StaffDetail(APIView):
-    parser_classes = (MultiPartParser, FormParser)  # <— add this
+    # parser_classes = (MultiPartParser, FormParser)  # <— add this
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self, staffid):
         try:
@@ -224,25 +184,54 @@ class StaffDetail(APIView):
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response(StaffSerializer(staff).data)
 
+    # def put(self, request, staffid):
+    #     staff = self.get_object(staffid)
+    #     if not staff:
+    #         return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    #     # handle file if present
+    #     file_obj = request.FILES.get('signature_image')
+    #     if file_obj:
+    #         # delete old file if exists
+    #         if staff.signature_imageurl:
+    #             old_rel = staff.signature_imageurl.split('/media/')[-1]
+    #             if default_storage.exists(old_rel):
+    #                 default_storage.delete(old_rel)
+    #         # save new file
+    #         path = default_storage.save(f'signatures/{staffid}_{file_obj.name}', ContentFile(file_obj.read()))
+    #         # set field so serializer picks it up
+    #         request.data._mutable = True  # only needed if request.data is QueryDict
+    #         request.data['signature_imageurl'] = request.build_absolute_uri('/media/' + path)
+
+    #     serializer = StaffSerializer(staff, data=request.data, partial=True)
+    #     if serializer.is_valid():
+    #         serializer.save()
+    #         return Response(serializer.data)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     def put(self, request, staffid):
         staff = self.get_object(staffid)
         if not staff:
             return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        # handle file if present
+        # ⬇️ NEW: Only handle file if it's present
         file_obj = request.FILES.get('signature_image')
         if file_obj:
-            # delete old file if exists
+            # delete old file if exists (unchanged)
             if staff.signature_imageurl:
                 old_rel = staff.signature_imageurl.split('/media/')[-1]
                 if default_storage.exists(old_rel):
                     default_storage.delete(old_rel)
-            # save new file
-            path = default_storage.save(f'signatures/{staffid}_{file_obj.name}', ContentFile(file_obj.read()))
-            # set field so serializer picks it up
-            request.data._mutable = True  # only needed if request.data is QueryDict
+            # save new file (unchanged)
+            path = default_storage.save(
+                f'signatures/{staffid}_{file_obj.name}',
+                ContentFile(file_obj.read())
+            )
+            # ⬇️ NEW: make request.data mutable only if needed
+            if hasattr(request.data, "_mutable"):
+                request.data._mutable = True
             request.data['signature_imageurl'] = request.build_absolute_uri('/media/' + path)
 
+        # serializer & save (same as before)
         serializer = StaffSerializer(staff, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -313,11 +302,11 @@ class StaffApprovalQueueView(APIView):
                 continue
 
             if show_doc and my_approval:
-                # fetch student + template docs
+                
                 student_obj = Student.objects(id=fr.student_id).first()
                 template_obj = FormTemplate.objects(id=fr.template_id).first()
 
-                # Build richer response
+                
                 results.append({
                     "form_id": str(fr.id),
                     "form_title": template_obj.title if template_obj else None,
@@ -346,6 +335,61 @@ class StaffApprovalQueueView(APIView):
 
         return Response(results, status=status.HTTP_200_OK)
     
+
+# class StaffFormRequestActionView(APIView):
+#     """
+#     POST /api/staff/form-requests/<staff_id>/<form_id>/<action>/
+#     action = approve | reject
+#     """
+
+#     def post(self, request, staff_id, form_id, action):
+#         remark = request.data.get("remark", "")
+
+#         # validate ids
+#         try:
+#             staff_obj_id = ObjectId(staff_id)
+#             form_obj_id = ObjectId(form_id)
+#         except Exception:
+#             return Response({"error": "Invalid ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # find form
+#         form_request = FormRequest.objects(id=form_obj_id).first()
+#         if not form_request:
+#             return Response({"error": "Form not found"}, status=status.HTTP_404_NOT_FOUND)
+
+#         # find the staff's approval entry
+#         for approval in form_request.staff_approvals:
+#             if approval.staff_id == staff_obj_id:
+#                 if approval.status in ["approved", "rejected"]:
+#                     return Response(
+#                         {"error": "Already processed"},
+#                         status=status.HTTP_400_BAD_REQUEST
+#                     )
+
+#                 if action == "approve":
+#                     approval.status = "approved"
+#                     approval.remarks = remark
+#                     from datetime import datetime
+#                     approval.approved_at = datetime.utcnow()
+
+#                 elif action == "reject":
+#                     approval.status = "rejected"
+#                     approval.remarks = remark
+#                     from datetime import datetime
+#                     approval.approved_at = datetime.utcnow()
+
+#                     # also set overall form status as rejected if needed
+#                     form_request.status = "rejected"
+
+#                 else:
+#                     return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+
+#                 form_request.save()
+#                 return Response({"message": f"{action.capitalize()}d successfully"}, status=status.HTTP_200_OK)
+
+#         return Response({"error": "Staff not in approval chain"}, status=status.HTTP_404_NOT_FOUND)
+
+
 
 class StaffFormRequestActionView(APIView):
     """
@@ -377,25 +421,75 @@ class StaffFormRequestActionView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
+                from datetime import datetime
+
                 if action == "approve":
                     approval.status = "approved"
                     approval.remarks = remark
-                    from datetime import datetime
                     approval.approved_at = datetime.utcnow()
 
                 elif action == "reject":
                     approval.status = "rejected"
                     approval.remarks = remark
-                    from datetime import datetime
                     approval.approved_at = datetime.utcnow()
-
-                    # also set overall form status as rejected if needed
+                    # If anyone rejects, the whole form is rejected
                     form_request.status = "rejected"
 
                 else:
                     return Response({"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST)
 
+                # Check if all staff have approved
+                if action == "approve":
+                    all_approved = all(
+                        a.status == "approved" for a in form_request.staff_approvals
+                    )
+                    if all_approved:
+                        form_request.status = "approved"
+
                 form_request.save()
                 return Response({"message": f"{action.capitalize()}d successfully"}, status=status.HTTP_200_OK)
 
         return Response({"error": "Staff not in approval chain"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class FormStdDetails(APIView):
+    """
+    GET /api/forms/student/<std_id>/
+    Returns all forms for a given student ID
+    """
+
+    def get(self, request, std_id):
+        # Validate student ID
+        try:
+            student_obj_id = ObjectId(std_id)
+        except Exception:
+            return Response({"error": "Invalid student ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Fetch all form requests for this student
+        form_requests = FormRequest.objects(student_id=student_obj_id)
+
+        if not form_requests:
+            return Response({"message": "No forms found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Prepare response
+        result = []
+        for form in form_requests:
+            form_data = {
+                "form_id": str(form.id),
+                "template_id": str(form.template.id) if hasattr(form, 'template') else None,
+                "template_name": form.template.name if hasattr(form, 'template') else None,
+                "status": form.status,
+                "submitted_at": form.submitted_at.isoformat() if hasattr(form, 'submitted_at') else None,
+                "staff_approvals": [
+                    {
+                        "staff_id": str(a.staff_id),
+                        "status": a.status,
+                        "remarks": a.remarks,
+                        "approved_at": a.approved_at.isoformat() if hasattr(a, 'approved_at') and a.approved_at else None
+                    }
+                    for a in form.staff_approvals
+                ]
+            }
+            result.append(form_data)
+
+        return Response({"forms": result}, status=status.HTTP_200_OK)

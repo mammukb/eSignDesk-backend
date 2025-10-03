@@ -18,6 +18,7 @@ urlpatterns = [
     path("forms/", FormTemplateListCreate.as_view()),
     path("forms/<str:form_id>/", FormTemplateDetail.as_view()),
     path("form-templates/", FormTemplateListCreate.as_view()),
+    path("forms/student/<str:std_id>/", FormStdDetails.as_view()),
     path("form-requests/", FormRequestCreateView.as_view()),
 
     path("staff/", StaffListCreate.as_view()),
