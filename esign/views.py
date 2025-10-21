@@ -148,6 +148,168 @@ class FormTemplateDetail(APIView):
         form.delete()
         return Response(status=204)
 
+class StudentDocumentListView(APIView):
+    """
+    GET /api/student/<student_id>/documents/
+    Returns all document (form request) details for a given student ID,
+    and includes staff name for each approval entry.
+    """
+    def get(self, request, student_id):
+        try:
+            student_obj_id = ObjectId(student_id)
+        except Exception:
+            return Response({"error": "Invalid student ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # fetch student details (may be None)
+        student_obj = Student.objects(id=student_obj_id).first()
+
+        form_requests = FormRequest.objects(student_id=student_obj_id)
+        if not form_requests:
+            return Response({"message": "No documents found"}, status=status.HTTP_404_NOT_FOUND)
+
+        documents = []
+        for form in form_requests:
+            template = None
+            if getattr(form, "template_id", None):
+                template = FormTemplate.objects(id=form.template_id).first()
+
+            staff_approvals = []
+            for a in getattr(form, "staff_approvals", []):
+                staff_obj = None
+                if getattr(a, "staff_id", None):
+                    staff_obj = Staff.objects(id=a.staff_id).first()
+
+                # build full staff info when available
+                staff_info = None
+                if staff_obj:
+                    staff_info = {
+                        "id": str(staff_obj.id),
+                        "staffid": getattr(staff_obj, "staffid", None),
+                        "name": getattr(staff_obj, "name", None),
+                        "email": getattr(staff_obj, "email", None),
+                        "designation": getattr(staff_obj, "designation", None),
+                        "department": getattr(staff_obj, "department", None),
+                        "signature_imageurl": getattr(staff_obj, "signature_imageurl", None),
+                    }
+
+                staff_approvals.append({
+                    "staff_id": str(a.staff_id) if getattr(a, "staff_id", None) else None,
+                    "staff": staff_info,
+                    "status": getattr(a, "status", None),
+                    "remarks": getattr(a, "remarks", None),
+                    "approved_at": a.approved_at.isoformat() if getattr(a, "approved_at", None) else None
+                })
+
+            # prefer submitted_at if present, else fallback to created_at
+            submitted_at = None
+            if getattr(form, "submitted_at", None):
+                submitted_at = form.submitted_at.isoformat()
+            elif getattr(form, "created_at", None):
+                submitted_at = form.created_at.isoformat()
+
+            documents.append({
+                "form_id": str(form.id),
+                "template": {
+                    "id": str(template.id) if template else None,
+                    "title": getattr(template, "title", None),
+                    "issued_by": getattr(template, "issued_by", None),
+                    "description": getattr(template, "description", None),
+                },
+                "student": {
+                    "id": str(student_obj.id) if student_obj else None,
+                    "regno": getattr(student_obj, "regno", None),
+                    "name": getattr(student_obj, "name", None),
+                    "email": getattr(student_obj, "email", None),
+                    "course": getattr(student_obj, "course", None),
+                    "year": getattr(student_obj, "year", None),
+                    "phone_no": getattr(student_obj, "phone_no", None),
+                },
+                "status": getattr(form, "status", None),
+                "submitted_at": submitted_at,
+                "form_data": getattr(form, "form_data", None),
+                "staff_approvals": staff_approvals
+            })
+
+        return Response({"documents": documents}, status=status.HTTP_200_OK)
+
+
+
+class StaffDocumentListView(APIView):
+    """
+    GET /api/staff/<staff_id>/documents/
+    Returns all documents approved or rejected by a specific staff member.
+    """
+
+    def get(self, request, staff_id):
+        try:
+            staff_obj_id = ObjectId(staff_id)
+        except Exception:
+            return Response({"error": "Invalid staff ID"}, status=status.HTTP_400_BAD_REQUEST)
+
+        staff_obj = Staff.objects(id=staff_obj_id).first()
+        if not staff_obj:
+            return Response({"error": "Staff not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Fetch all forms where this staff is part of staff_approvals
+        form_requests = FormRequest.objects(staff_approvals__staff_id=staff_obj_id)
+        if not form_requests:
+            return Response({"message": "No documents found for this staff"}, status=status.HTTP_404_NOT_FOUND)
+
+        documents = []
+        for form in form_requests:
+            # Find this staff member’s approval entry
+            staff_approval_entry = None
+            for a in getattr(form, "staff_approvals", []):
+                if str(a.staff_id) == str(staff_obj_id):
+                    if getattr(a, "status", None) in ["approved", "rejected"]:  # ✅ filter here
+                        staff_approval_entry = a
+                    break
+
+            # Skip if staff hasn't yet approved/rejected
+            if not staff_approval_entry:
+                continue
+
+            # Load related details
+            student_obj = Student.objects(id=form.student_id).first() if getattr(form, "student_id", None) else None
+            template_obj = FormTemplate.objects(id=form.template_id).first() if getattr(form, "template_id", None) else None
+
+            submitted_at = (
+                form.submitted_at.isoformat()
+                if getattr(form, "submitted_at", None)
+                else form.created_at.isoformat() if getattr(form, "created_at", None) else None
+            )
+
+            documents.append({
+                "form_id": str(form.id),
+                "template": {
+                    "id": str(template_obj.id) if template_obj else None,
+                    "title": getattr(template_obj, "title", None),
+                    "issued_by": getattr(template_obj, "issued_by", None),
+                    "description": getattr(template_obj, "description", None),
+                },
+                "student": {
+                    "id": str(student_obj.id) if student_obj else None,
+                    "regno": getattr(student_obj, "regno", None),
+                    "name": getattr(student_obj, "name", None),
+                    "email": getattr(student_obj, "email", None),
+                    "course": getattr(student_obj, "course", None),
+                    "year": getattr(student_obj, "year", None),
+                    "phone_no": getattr(student_obj, "phone_no", None),
+                },
+                "status": getattr(form, "status", None),
+                "submitted_at": submitted_at,
+                "form_data": getattr(form, "form_data", None),
+                "staff_decision": {
+                    "status": getattr(staff_approval_entry, "status", None),
+                    "remarks": getattr(staff_approval_entry, "remarks", None),
+                    "approved_at": staff_approval_entry.approved_at.isoformat() if getattr(staff_approval_entry, "approved_at", None) else None,
+                }
+            })
+
+        if not documents:
+            return Response({"message": "No approved or rejected documents found"}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({"documents": documents}, status=status.HTTP_200_OK)
 
 # --- End Form Templates ---
 
@@ -254,6 +416,26 @@ class FormRequestCreateView(APIView):
             form_request = serializer.save()
             return Response({"id": str(form_request.id)}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FormRequestDetail(APIView):
+    """
+    DELETE /form-requests/<form_id>/
+    Delete a FormRequest by its ObjectId string.
+    """
+    def delete(self, request, form_id):
+        try:
+            form_obj_id = ObjectId(form_id)
+        except Exception:
+            return Response({"error": "Invalid form id"}, status=status.HTTP_400_BAD_REQUEST)
+
+        form_request = FormRequest.objects(id=form_obj_id).first()
+        if not form_request:
+            return Response({"error": "FormRequest not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # perform delete
+        form_request.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 from bson import ObjectId
@@ -468,8 +650,8 @@ class FormStdDetails(APIView):
         # Fetch all form requests for this student
         form_requests = FormRequest.objects(student_id=student_obj_id)
 
-        if not form_requests:
-            return Response({"message": "No forms found"}, status=status.HTTP_404_NOT_FOUND)
+        # if not form_requests:
+        #     return Response({"message": "No forms found"}, status=status.HTTP_404_NOT_FOUND)
 
         # Prepare response
         result = []

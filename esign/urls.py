@@ -20,10 +20,12 @@ urlpatterns = [
     path("form-templates/", FormTemplateListCreate.as_view()),
     path("forms/student/<str:std_id>/", FormStdDetails.as_view()),
     path("form-requests/", FormRequestCreateView.as_view()),
+    path("form-requests/<str:form_id>/", FormRequestDetail.as_view()),
 
     path("staff/", StaffListCreate.as_view()),
     path("staff/<str:staffid>/", StaffDetail.as_view()),
     path("staff/request/<str:staff_id>/", StaffApprovalQueueView.as_view(), name="staff-form-requests", ),
     path("staff/request/<str:staff_id>/<str:form_id>/<str:action>/",StaffFormRequestActionView.as_view(),),
-
+    path("student/<str:student_id>/documents/", StudentDocumentListView.as_view()),
+    path("staff/<str:staff_id>/documents/", StaffDocumentListView.as_view()),
 ] 
